@@ -44,10 +44,9 @@ static dissector_handle_t blip_handle;
 
 static int proto_blip = -1;
 
-static int hf_foo_pdu_type = -1;
+static int hf_blip_message_number = -1;
 
-static gint ett_foo = -1;
-
+static gint ett_blip = -1;
 
 
 static int
@@ -64,14 +63,14 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     col_clear(pinfo->cinfo,COL_INFO);
 
     /* Add a subtree to dissection.  See 9.2.2. Dissecting the details of the protocol of WSDG */
-
-    // proto_tree_add_item(proto_tree *tree, int hfindex, tvbuff_t *tvb, const gint start, gint length, const guint encoding)
-
     proto_item *blip_item = proto_tree_add_item(tree, proto_blip, tvb, offset, -1, ENC_NA);
 
-    blip_tree = proto_item_add_subtree(blip_item, ett_foo);
-    proto_tree_add_item(blip_tree, hf_foo_pdu_type, tvb, 0, 1, ENC_BIG_ENDIAN);
 
+    blip_tree = proto_item_add_subtree(blip_item, ett_blip);
+
+    proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, 0, 1, ENC_BIG_ENDIAN);
+
+    // This gets the message number as a var int
 
     guint64 value;
     guint varint_length = tvb_get_varint(
@@ -97,8 +96,8 @@ proto_register_blip(void)
 {
 
     static hf_register_info hf[] = {
-            { &hf_foo_pdu_type,
-                    { "FOO PDU Type", "foo.type",
+            { &hf_blip_message_number,
+                    { "BLIP Message Number", "blip.messagenum",
                             FT_UINT8, BASE_DEC,
                             NULL, 0x0,
                             NULL, HFILL }
@@ -107,7 +106,7 @@ proto_register_blip(void)
 
     /* Setup protocol subtree array */
     static gint *ett[] = {
-            &ett_foo
+            &ett_blip
     };
 
     proto_blip = proto_register_protocol("BLIP Couchbase Mobile", "BLIP", "blip");
