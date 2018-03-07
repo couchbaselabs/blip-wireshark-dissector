@@ -65,13 +65,17 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     /* Add a subtree to dissection.  See 9.2.2. Dissecting the details of the protocol of WSDG */
     proto_item *blip_item = proto_tree_add_item(tree, proto_blip, tvb, offset, -1, ENC_NA);
 
-
     blip_tree = proto_item_add_subtree(blip_item, ett_blip);
 
-    proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, 0, 1, ENC_BIG_ENDIAN);
 
-    // This gets the message number as a var int
 
+    // I tried passing a size of FT_VARINT_MAX_LEN, but got this error:
+    // ﻿Expert Info (Warning/Malformed): Trying to fetch an unsigned integer with length 10
+    // proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, FT_VARINT_MAX_LEN, ENC_BIG_ENDIAN & ENC_VARINT_PROTOBUF);
+
+
+
+    // This gets the message number as a var int in order to find out how much to bump the offset for the next proto_tree item
     guint64 value;
     guint varint_length = tvb_get_varint(
             tvb,
@@ -79,10 +83,18 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
             FT_VARINT_MAX_LEN,
             &value,
             ENC_VARINT_PROTOBUF);
-    printf("My value: %" G_GUINT64_FORMAT "\n", value);
-    printf("varint len: %d\n", varint_length);
 
-    // Stop compiler from complaitning about unused variables
+    printf("BLIP message number: %" G_GUINT64_FORMAT "\n", value);
+
+    // TODO: It might be worth testing to make sure ENC_VARINT_PROTOBUF is actually working here
+    // TODO: by having message numbers larger that don't fit in 16-bits, and see if it renders properly after this fix.
+    // TODO: I'm not sure if this should be (ENC_BIG_ENDIAN | ENC_VARINT_PROTOBUF) or just ENC_VARINT_PROTOBUF.
+    proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, varint_length, ENC_VARINT_PROTOBUF);
+
+    offset += varint_length;
+    printf("new offset: %d\n", offset);
+
+    // Stop compiler from complaining about unused variables
     if (pinfo || tree || data) {
 
     }
@@ -98,7 +110,7 @@ proto_register_blip(void)
     static hf_register_info hf[] = {
             { &hf_blip_message_number,
                     { "BLIP Message Number", "blip.messagenum",
-                            FT_UINT8, BASE_DEC,
+                            FT_UINT64, BASE_DEC,
                             NULL, 0x0,
                             NULL, HFILL }
             }
