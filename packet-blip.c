@@ -59,6 +59,12 @@ static gint ett_json_array_compact = -1;
 static gint ett_json_object_compact = -1;
 static gint ett_json_member_compact = -1;
 
+
+#define BLIP_HFI_INIT HFI_INIT(proto_blip)
+
+static header_field_info hfi_blip BLIP_HFI_INIT =
+        { "BLIP", "blip", FT_NONE, BASE_NONE, NULL, 0x00, "BLIP", HFILL };
+
 static header_field_info *hfi_json = NULL;
 
 #define JSON_HFI_INIT HFI_INIT(proto_json)
@@ -175,7 +181,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // proto_tree_add_item(proto_tree *tree, int hfindex, tvbuff_t *tvb, const gint start, gint length, const guint encoding)
 
-    proto_item *ti = proto_tree_add_item(tree, proto_blip, tvb, 0, -1, ENC_NA);
+    proto_item *ti = proto_tree_add_item(tree, &hfi_blip, tvb, 0, -1, ENC_NA);
     printf("ti: %p", ti); // appease compiler
 
     guint64 value;
