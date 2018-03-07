@@ -1,29 +1,9 @@
-/* Originally adapted from packet-json.c
- * Routines for JSON dissection
- * References:
- *     RFC 4627: http://tools.ietf.org/html/rfc4627
- *     Website:  http://json.org/
- *
- * Copyright 2010, Jakub Zawadzki <darkjames-ws@darkjames.pl>
- *
- * Wireshark - Network traffic analyzer
- * By Gerald Combs <gerald@wireshark.org>
- * Copyright 1998 Gerald Combs
- *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
- */
+// Experimental dissector for BLIP (https://github.com/couchbaselabs/BLIP-Cpp)
+//
+// License: Apache2
+//
+// BLIP protocol spec: https://github.com/couchbaselabs/BLIP-Cpp/blob/a33262740787bbdfb17eef6d8a6ab4a5e18fe089/docs/BLIP%20Protocol.md
+//
 
 #include "config.h"
 
@@ -73,6 +53,7 @@ static int proto_blip = -1;
 
 static int hf_blip_message_number = -1;
 static int hf_blip_frame_flags = -1;
+static int hf_blip_properties_length = -1;
 
 static gint ett_blip = -1;
 
@@ -99,7 +80,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     blip_tree = proto_item_add_subtree(blip_item, ett_blip);
 
 
-    // ------------------------ BLIP Message Number VarInt frame header ------------------------------------------------
+    // ------------------------ BLIP Frame Header: Message Number VarInt -----------------------------------------------
 
     // This gets the message number as a var int in order to find out how much to bump
     // the offset for the next proto_tree item
@@ -122,7 +103,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     printf("new offset: %d\n", offset);
 
 
-    // ------------------------ BLIP Message Number VarInt frame flags ------------------------------------------------
+    // ------------------------ BLIP Frame Header: Frame Flags VarInt --------------------------------------------------
 
     // This gets the message number as a var int in order to find out how much to bump
     // the offset for the next proto_tree item
@@ -150,6 +131,28 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // TODO:    MoreComing= 0x40  // 0100 0000
     // TODO: it should issue warnings that subsequent packets in this conversation will be broken, since it currently
     // TODO: doesn't handle messages split among multiple frames
+    
+    // TODO: if this flag is set:
+    // TODO:    Compressed= 0x08  // 0000 1000
+    // TODO: it should not try to decode the body into json (or are properties compressed too!?)
+
+    // ------------------------ BLIP Frame Header: Properties Length VarInt --------------------------------------------------
+
+
+    guint64 value_properties_length;
+    guint value_properties_length_varint_length = tvb_get_varint(
+            tvb,
+            offset,
+            FT_VARINT_MAX_LEN,
+            &value_properties_length,
+            ENC_VARINT_PROTOBUF);
+
+    printf("BLIP properties length: %" G_GUINT64_FORMAT "\n", value_properties_length);
+
+    proto_tree_add_item(blip_tree, hf_blip_properties_length, tvb, offset, value_properties_length_varint_length, ENC_VARINT_PROTOBUF);
+
+    offset += value_properties_length_varint_length;
+    printf("new offset: %d\n", offset);
 
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
@@ -178,6 +181,12 @@ proto_register_blip(void)
             },
             { &hf_blip_frame_flags,
                     { "BLIP Frame Flags", "blip.frameflags",
+                            FT_UINT64, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_blip_properties_length,
+                    { "BLIP Properties Length", "blip.propslength",
                             FT_UINT64, BASE_DEC,
                             NULL, 0x0,
                             NULL, HFILL }
