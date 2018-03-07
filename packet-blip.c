@@ -45,9 +45,9 @@ void proto_register_json(void);
 void proto_reg_handoff_json(void);
 static char *json_string_unescape(tvbparse_elem_t *tok);
 
-static dissector_handle_t json_handle;
+static dissector_handle_t blip_handle;
 
-static int proto_json = -1;
+static int proto_blip = -1;
 
 static gint ett_json = -1;
 static gint ett_json_array = -1;
@@ -165,6 +165,18 @@ static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
 
+    /* Set the protcol column to say BLIP */
+    col_set_str(pinfo->cinfo, COL_PROTOCOL, "BLIP");
+
+    /* Clear out stuff in the info column */
+    col_clear(pinfo->cinfo,COL_INFO);
+
+    /* Add a subtree to dissection.  See 9.2.2. Dissecting the details of the protocol of WSDG */
+
+    // proto_tree_add_item(proto_tree *tree, int hfindex, tvbuff_t *tvb, const gint start, gint length, const guint encoding)
+
+    proto_item *ti = proto_tree_add_item(tree, proto_blip, tvb, 0, -1, ENC_NA);
+    printf("ti: %p", ti); // appease compiler
 
     guint64 value;
     guint varint_length = tvb_get_varint(
@@ -713,26 +725,34 @@ proto_register_blip(void)
 
     module_t *json_module;
 
-    proto_json = proto_register_protocol("BLIP Couchbase Mobile", "BLIP", "blip");
-    hfi_json = proto_registrar_get_nth(proto_json);
+    proto_blip = proto_register_protocol("BLIP Couchbase Mobile", "BLIP", "blip");
 
-    proto_register_fields(proto_json, hfi, array_length(hfi));
+
+    hfi_json = proto_registrar_get_nth(proto_blip);
+
+    proto_register_fields(proto_blip, hfi, array_length(hfi));
     proto_register_subtree_array(ett, array_length(ett));
 
-    json_handle = register_dissector("blip", dissect_blip, proto_json);
+    blip_handle = register_dissector("blip", dissect_blip, proto_blip);
 
     init_json_parser();
 
-    json_module = prefs_register_protocol(proto_json, NULL);
+    json_module = prefs_register_protocol(proto_blip, NULL);
     prefs_register_bool_preference(json_module, "compact_form",
-                                   "Display JSON in compact form",
-                                   "Display JSON like in browsers devtool",
+                                   "Display BLIP in compact form",
+                                   "Display BLIP like in browsers devtool",
                                    &json_compact);
 }
 
 void
 proto_reg_handoff_blip(void)
 {
+
+    // Register the blip dissector as a subprotocol dissector of "ws.protocol",
+    // matching any packets with a Web-Sec-Protocol header of "BLIP_3+CBMobile_2".
+    //
+    // See https://github.com/couchbase/sync_gateway/issues/3356#issuecomment-370958321 for
+    // more notes on how the websocket dissector routes packets down to subprotocol handlers.
 
     ftenum_t type;
     dissector_table_t table = find_dissector_table("ws.protocol");
@@ -742,7 +762,7 @@ proto_reg_handoff_blip(void)
     type = get_dissector_table_selector_type("ws.protocol");
     if (type == FT_STRING) {
         printf("is FT_STRING");
-        dissector_add_string("ws.protocol", "BLIP_3+CBMobile_2", json_handle);
+        dissector_add_string("ws.protocol", "BLIP_3+CBMobile_2", blip_handle);
     } else {
         printf("not FT_STRING");
     }
