@@ -44,10 +44,18 @@ static dissector_handle_t blip_handle;
 
 static int proto_blip = -1;
 
+static int hf_message_num = -1;
+
+
+static gint ett_blip = -1;
+
 
 static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
+
+    proto_tree *blip_tree;
+    gint        offset = 0;
 
     /* Set the protcol column to say BLIP */
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "BLIP");
@@ -59,8 +67,13 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // proto_tree_add_item(proto_tree *tree, int hfindex, tvbuff_t *tvb, const gint start, gint length, const guint encoding)
 
-    proto_item *ti = proto_tree_add_item(tree, proto_blip, tvb, 0, -1, ENC_NA);
-    printf("ti: %p", ti); // appease compiler
+    proto_item *blip_item = proto_tree_add_item(tree, proto_blip, tvb, offset, -1, ENC_NA);
+    blip_tree = proto_item_add_subtree(blip_item, ett_blip);
+
+    // Add fake message num
+    proto_item *blip_tree_item = proto_tree_add_item(blip_tree, hf_message_num, tvb, offset, 1, ENC_ASCII | ENC_NA);
+    printf("blip_tree_item: %p", blip_tree_item); // appease compiler
+
 
     guint64 value;
     guint varint_length = tvb_get_varint(
@@ -77,17 +90,27 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     }
 
-
     return tvb_captured_length(tvb);
 }
-
 
 
 void
 proto_register_blip(void)
 {
 
+    static gint *ett[] = {
+            &ett_blip,
+    };
+
+    static hf_register_info hf[] = {
+            {&hf_message_num, {"MessageNum", "blip.messagenum", FT_UINT64, BASE_DEC, NULL, 0x0, "Message number", HFILL}},
+    };
+
     proto_blip = proto_register_protocol("BLIP Couchbase Mobile", "BLIP", "blip");
+
+    proto_register_field_array(proto_blip, hf, array_length(hf));
+    proto_register_subtree_array(ett, array_length(ett));
+
 
     blip_handle = register_dissector("blip", dissect_blip, proto_blip);
 
