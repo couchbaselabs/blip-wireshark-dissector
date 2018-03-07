@@ -40,6 +40,33 @@
 #include "packet-http.h"
 
 
+// Cribbed from https://stackoverflow.com/questions/111928/is-there-a-printf-converter-to-print-in-binary-format
+#define PRINTF_BINARY_PATTERN_INT8 "%c%c%c%c%c%c%c%c"
+#define PRINTF_BYTE_TO_BINARY_INT8(i)    \
+    (((i) & 0x80ll) ? '1' : '0'), \
+    (((i) & 0x40ll) ? '1' : '0'), \
+    (((i) & 0x20ll) ? '1' : '0'), \
+    (((i) & 0x10ll) ? '1' : '0'), \
+    (((i) & 0x08ll) ? '1' : '0'), \
+    (((i) & 0x04ll) ? '1' : '0'), \
+    (((i) & 0x02ll) ? '1' : '0'), \
+    (((i) & 0x01ll) ? '1' : '0')
+
+#define PRINTF_BINARY_PATTERN_INT16 \
+    PRINTF_BINARY_PATTERN_INT8              PRINTF_BINARY_PATTERN_INT8
+#define PRINTF_BYTE_TO_BINARY_INT16(i) \
+    PRINTF_BYTE_TO_BINARY_INT8((i) >> 8),   PRINTF_BYTE_TO_BINARY_INT8(i)
+#define PRINTF_BINARY_PATTERN_INT32 \
+    PRINTF_BINARY_PATTERN_INT16             PRINTF_BINARY_PATTERN_INT16
+#define PRINTF_BYTE_TO_BINARY_INT32(i) \
+    PRINTF_BYTE_TO_BINARY_INT16((i) >> 16), PRINTF_BYTE_TO_BINARY_INT16(i)
+#define PRINTF_BINARY_PATTERN_INT64    \
+    PRINTF_BINARY_PATTERN_INT32             PRINTF_BINARY_PATTERN_INT32
+#define PRINTF_BYTE_TO_BINARY_INT64(i) \
+    PRINTF_BYTE_TO_BINARY_INT32((i) >> 32), PRINTF_BYTE_TO_BINARY_INT32(i)
+/* --- end macros --- */
+
+
 static dissector_handle_t blip_handle;
 
 static int proto_blip = -1;
@@ -48,6 +75,7 @@ static int hf_blip_message_number = -1;
 static int hf_blip_frame_flags = -1;
 
 static gint ett_blip = -1;
+
 
 static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -113,6 +141,15 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     offset += varint_frame_flags_length;
     printf("new offset: %d\n", offset);
 
+    printf("Frame flags "
+                   PRINTF_BINARY_PATTERN_INT8 "\n",
+           PRINTF_BYTE_TO_BINARY_INT8(value_frame_flags));
+
+
+    // TODO: if this flag is set:
+    // TODO:    MoreComing= 0x40  // 0100 0000
+    // TODO: it should issue warnings that subsequent packets in this conversation will be broken, since it currently
+    // TODO: doesn't handle messages split among multiple frames
 
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
@@ -124,6 +161,8 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     return tvb_captured_length(tvb);
 }
+
+
 
 
 void
