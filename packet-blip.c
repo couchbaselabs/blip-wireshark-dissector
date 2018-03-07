@@ -162,7 +162,7 @@ json_object_add_key(json_parser_data_t *data)
 }
 
 static int
-dissect_json(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
+dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 {
 
 
@@ -719,7 +719,7 @@ proto_register_blip(void)
     proto_register_fields(proto_json, hfi, array_length(hfi));
     proto_register_subtree_array(ett, array_length(ett));
 
-    json_handle = register_dissector("blip", dissect_json, proto_json);
+    json_handle = register_dissector("blip", dissect_blip, proto_json);
 
     init_json_parser();
 
