@@ -45,9 +45,9 @@ static dissector_handle_t blip_handle;
 static int proto_blip = -1;
 
 static int hf_blip_message_number = -1;
+static int hf_blip_frame_flags = -1;
 
 static gint ett_blip = -1;
-
 
 static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -62,37 +62,60 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
 
+    // ------------------------------------- BLIP tree -----------------------------------------------------------------
+
+
     /* Add a subtree to dissection.  See 9.2.2. Dissecting the details of the protocol of WSDG */
     proto_item *blip_item = proto_tree_add_item(tree, proto_blip, tvb, offset, -1, ENC_NA);
 
     blip_tree = proto_item_add_subtree(blip_item, ett_blip);
 
 
+    // ------------------------ BLIP Message Number VarInt frame header ------------------------------------------------
 
-    // I tried passing a size of FT_VARINT_MAX_LEN, but got this error:
-    // ﻿Expert Info (Warning/Malformed): Trying to fetch an unsigned integer with length 10
-    // proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, FT_VARINT_MAX_LEN, ENC_BIG_ENDIAN & ENC_VARINT_PROTOBUF);
-
-
-
-    // This gets the message number as a var int in order to find out how much to bump the offset for the next proto_tree item
-    guint64 value;
-    guint varint_length = tvb_get_varint(
+    // This gets the message number as a var int in order to find out how much to bump
+    // the offset for the next proto_tree item
+    guint64 value_message_num;
+    guint varint_message_num_length = tvb_get_varint(
             tvb,
-            0,
+            offset,
             FT_VARINT_MAX_LEN,
-            &value,
+            &value_message_num,
             ENC_VARINT_PROTOBUF);
 
-    printf("BLIP message number: %" G_GUINT64_FORMAT "\n", value);
+    printf("BLIP message number: %" G_GUINT64_FORMAT "\n", value_message_num);
 
     // TODO: It might be worth testing to make sure ENC_VARINT_PROTOBUF is actually working here
     // TODO: by having message numbers larger that don't fit in 16-bits, and see if it renders properly after this fix.
     // TODO: I'm not sure if this should be (ENC_BIG_ENDIAN | ENC_VARINT_PROTOBUF) or just ENC_VARINT_PROTOBUF.
-    proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, varint_length, ENC_VARINT_PROTOBUF);
+    proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, varint_message_num_length, ENC_VARINT_PROTOBUF);
 
-    offset += varint_length;
+    offset += varint_message_num_length;
     printf("new offset: %d\n", offset);
+
+
+    // ------------------------ BLIP Message Number VarInt frame flags ------------------------------------------------
+
+    // This gets the message number as a var int in order to find out how much to bump
+    // the offset for the next proto_tree item
+    guint64 value_frame_flags;
+    guint varint_frame_flags_length = tvb_get_varint(
+            tvb,
+            offset,
+            FT_VARINT_MAX_LEN,
+            &value_frame_flags,
+            ENC_VARINT_PROTOBUF);
+
+    printf("BLIP frame flags: %" G_GUINT64_FORMAT "\n", value_frame_flags);
+
+    proto_tree_add_item(blip_tree, hf_blip_frame_flags, tvb, offset, varint_frame_flags_length, ENC_VARINT_PROTOBUF);
+
+    offset += varint_frame_flags_length;
+    printf("new offset: %d\n", offset);
+
+
+
+    // -------------------------------------------- Etc ----------------------------------------------------------------
 
     // Stop compiler from complaining about unused variables
     if (pinfo || tree || data) {
@@ -113,7 +136,13 @@ proto_register_blip(void)
                             FT_UINT64, BASE_DEC,
                             NULL, 0x0,
                             NULL, HFILL }
-            }
+            },
+            { &hf_blip_frame_flags,
+                    { "BLIP Frame Flags", "blip.frameflags",
+                            FT_UINT64, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
     };
 
     /* Setup protocol subtree array */
