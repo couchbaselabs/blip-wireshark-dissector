@@ -110,7 +110,7 @@ static gboolean json_compact = FALSE;
 static tvbparse_wanted_t* want;
 static tvbparse_wanted_t* want_ignore;
 
-static dissector_handle_t text_lines_handle;
+//static dissector_handle_t text_lines_handle;
 
 typedef enum {
     JSON_TOKEN_INVALID = -1,
@@ -164,109 +164,26 @@ json_object_add_key(json_parser_data_t *data)
 static int
 dissect_json(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data)
 {
-    proto_tree *json_tree = NULL;
-    proto_item *ti = NULL;
 
-    json_parser_data_t parser_data;
-    tvbparse_t *tt;
 
-    http_message_info_t *message_info;
-    const char *data_name;
-    int offset;
+    guint64 value;
+    guint varint_length = tvb_get_varint(
+            tvb,
+            0,
+            FT_VARINT_MAX_LEN,
+            &value,
+            ENC_VARINT_PROTOBUF);
+    printf("My value: %" G_GUINT64_FORMAT "\n", value);
+    printf("varint len: %d\n", varint_length);
 
-    /* JSON dissector can be called in a JSON native file or when transported
-     * by another protocol. We set the column values only if they've not been
-     * already set by someone else.
-     */
-    wmem_list_frame_t *proto = wmem_list_frame_prev(wmem_list_tail(pinfo->layers));
-    if (proto) {
-        const char *name = proto_get_protocol_filter_name(GPOINTER_TO_INT(wmem_list_frame_data(proto)));
+    // Stop compiler from complaitning about unused variables
+    if (pinfo || tree || data) {
 
-        if (!strcmp(name, "frame")) {
-            col_set_str(pinfo->cinfo, COL_PROTOCOL, "JSON");
-            col_set_str(pinfo->cinfo, COL_INFO, "JavaScript Object Notation");
-        }
     }
 
-    data_name = pinfo->match_string;
-    if (! (data_name && data_name[0])) {
-        /*
-         * No information from "match_string"
-         */
-        message_info = (http_message_info_t *)data;
-        if (message_info == NULL) {
-            /*
-             * No information from dissector data
-             */
-            data_name = NULL;
-        } else {
-            data_name = message_info->media_str;
-            if (! (data_name && data_name[0])) {
-                /*
-                 * No information from dissector data
-                 */
-                data_name = NULL;
-            }
-        }
-    }
-
-    if (tree) {
-        ti = proto_tree_add_item(tree, hfi_json, tvb, 0, -1, ENC_NA);
-        json_tree = proto_item_add_subtree(ti, ett_json);
-
-        if (data_name)
-            proto_item_append_text(ti, ": %s", data_name);
-    }
-
-    offset = 0;
-
-    parser_data.stack = wmem_stack_new(wmem_packet_scope());
-    wmem_stack_push(parser_data.stack, json_tree);
-
-    if (json_compact) {
-        proto_tree *json_tree_compact = NULL;
-        json_tree_compact = proto_tree_add_subtree(json_tree, tvb, 0, -1, ett_json_compact, NULL, "JSON compact form:");
-
-        parser_data.stack_compact = wmem_stack_new(wmem_packet_scope());
-        wmem_stack_push(parser_data.stack_compact, json_tree_compact);
-
-        parser_data.array_idx = wmem_stack_new(wmem_packet_scope());
-        wmem_stack_push(parser_data.array_idx, GINT_TO_POINTER(JSON_COMPACT_TOP_ITEM)); /* top element */
-    }
-
-
-    tt = tvbparse_init(tvb, offset, -1, &parser_data, want_ignore);
-
-    /* XXX, only one json in packet? */
-    while ((tvbparse_get(tt, want)))
-        ;
-
-    offset = tvbparse_curr_offset(tt);
-
-    proto_item_set_len(ti, offset);
-
-    /* if we have some unparsed data, pass to data-text-lines dissector (?) */
-    if (tvb_reported_length_remaining(tvb, offset) > 0) {
-        tvbuff_t *next_tvb;
-
-        next_tvb = tvb_new_subset_remaining(tvb, offset);
-
-        call_dissector_with_data(text_lines_handle, next_tvb, pinfo, tree, data);
-    } else if (data_name) {
-        col_append_sep_fstr(pinfo->cinfo, COL_INFO, " ", "(%s)", data_name);
-    }
 
     return tvb_captured_length(tvb);
 }
-
-/*
- * For dissecting JSON in a file; we don't get passed a media type.
- */
-//static int
-//dissect_json_file(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void* data _U_)
-//{
-//    return dissect_json(tvb, pinfo, tree, NULL);
-//}
 
 static void before_object(void *tvbparse_data, const void *wanted_data _U_, tvbparse_elem_t *tok) {
     json_parser_data_t *data = (json_parser_data_t *) tvbparse_data;
@@ -760,19 +677,7 @@ static void init_json_parser(void) {
     /* XXX, heur? */
 }
 
-/* This function leverages the libjsmn to undestand if the payload is json or not
-*/
-//static gboolean
-//dissect_json_heur(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
-//{
-//    guint len = tvb_captured_length(tvb);
-//    const guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, 0, len, ENC_ASCII);
-//
-//    if (jsmn_is_json(buf, len) == FALSE)
-//        return FALSE;
-//
-//    return (dissect_json(tvb, pinfo, tree, data) != 0);
-//}
+
 
 void
 proto_register_blip(void)
@@ -829,29 +734,6 @@ void
 proto_reg_handoff_blip(void)
 {
 
-
-//    dissector_handle_t json_file_handle = create_dissector_handle(dissect_json_file, proto_json);
-//
-//    heur_dissector_add("hpfeeds", dissect_json_heur, "JSON over HPFEEDS", "json_hpfeeds", proto_json, HEURISTIC_ENABLE);
-//    heur_dissector_add("db-lsp", dissect_json_heur, "JSON over DB-LSP", "json_db_lsp", proto_json, HEURISTIC_ENABLE);
-//    dissector_add_uint("wtap_encap", WTAP_ENCAP_JSON, json_file_handle);
-//
-//    dissector_add_string("media_type", "application/json", json_handle); /* RFC 4627 */
-//    dissector_add_string("media_type", "application/json-rpc", json_handle); /* JSON-RPC over HTTP */
-//    dissector_add_string("media_type", "application/jsonrequest", json_handle); /* JSON-RPC over HTTP */
-//    dissector_add_string("media_type", "application/dds-web+json", json_handle); /* DDS Web Integration Service over HTTP */
-//    dissector_add_string("media_type", "application/vnd.oma.lwm2m+json", json_handle); /* LWM2M JSON over CoAP */
-//    dissector_add_string("grpc_message_type", "application/grpc+json", json_handle);
-//
-//    text_lines_handle = find_dissector_add_dependency("data-text-lines", proto_json);
-
-
-    // TODO: port from lua
-    // local ws_dissector_table = DissectorTable.get("ws.protocol")
-    // ws_dissector_table:add("BLIP_3+CBMobile_2", p_myproto)
-
-
-    // Translates to:
     ftenum_t type;
     dissector_table_t table = find_dissector_table("ws.protocol");
     if (table) {
