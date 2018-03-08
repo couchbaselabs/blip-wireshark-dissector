@@ -54,6 +54,7 @@ static int proto_blip = -1;
 static int hf_blip_message_number = -1;
 static int hf_blip_frame_flags = -1;
 static int hf_blip_properties_length = -1;
+static int hf_blip_properties = -1;
 
 static gint ett_blip = -1;
 
@@ -94,9 +95,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     printf("BLIP message number: %" G_GUINT64_FORMAT "\n", value_message_num);
 
-    // TODO: It might be worth testing to make sure ENC_VARINT_PROTOBUF is actually working here
-    // TODO: by having message numbers larger that don't fit in 16-bits, and see if it renders properly after this fix.
-    // TODO: I'm not sure if this should be (ENC_BIG_ENDIAN | ENC_VARINT_PROTOBUF) or just ENC_VARINT_PROTOBUF.
     proto_tree_add_item(blip_tree, hf_blip_message_number, tvb, offset, varint_message_num_length, ENC_VARINT_PROTOBUF);
 
     offset += varint_message_num_length;
@@ -131,13 +129,15 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // TODO:    MoreComing= 0x40  // 0100 0000
     // TODO: it should issue warnings that subsequent packets in this conversation will be broken, since it currently
     // TODO: doesn't handle messages split among multiple frames
-    
+
     // TODO: if this flag is set:
     // TODO:    Compressed= 0x08  // 0000 1000
     // TODO: it should not try to decode the body into json (or are properties compressed too!?)
 
     // ------------------------ BLIP Frame Header: Properties Length VarInt --------------------------------------------------
 
+    // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
+    // In other words, as soon as there is a message that spans two frames, this code will break.
 
     guint64 value_properties_length;
     guint value_properties_length_varint_length = tvb_get_varint(
@@ -153,6 +153,25 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     offset += value_properties_length_varint_length;
     printf("new offset: %d\n", offset);
+
+
+
+    // ------------------------ BLIP Frame: Properties --------------------------------------------------
+
+    // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
+    // In other words, as soon as there is a message that spans two frames, this code will break.
+
+    // ENC_UTF_8
+
+    const guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
+    printf("buf: %s", buf);
+
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset, (gint) value_properties_length, ENC_UTF_8);
+
+    offset += value_properties_length;
+    printf("new offset: %d\n", offset);
+
 
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
@@ -188,6 +207,12 @@ proto_register_blip(void)
             { &hf_blip_properties_length,
                     { "BLIP Properties Length", "blip.propslength",
                             FT_UINT64, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_blip_properties,
+                    { "BLIP Properties", "blip.props",
+                            FT_STRING, STR_UNICODE,
                             NULL, 0x0,
                             NULL, HFILL }
             },
