@@ -66,7 +66,19 @@ static gint ett_blip = -1;
 
 /* define your structure here */
 typedef struct {
+
     int num_frames_seen;
+
+    // For the _requests_ only, keep track of the largest frame number seen.  This is useful for determining whether
+    // this is the first frame in a request message or not
+
+    // key: message number
+    // value: frame number for the _first_ frame in this request message
+    wmem_map_t *blip_requests;
+
+    // TODO: similar map for blip_responses, and maybe even errors.
+
+
 } blip_conversation_entry_t;
 
 
@@ -82,26 +94,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
-
-
-
-    // ------------------------------------- Conversation Tracking -----------------------------------------------------
-
-
-    // Adapted from sample code in https://raw.githubusercontent.com/wireshark/wireshark/master/doc/README.dissector
-
-    conversation_t *conversation;
-    conversation = find_or_create_conversation(pinfo);
-    blip_conversation_entry_t *conversation_entry_ptr = (blip_conversation_entry_t*)conversation_get_proto_data(conversation, proto_blip);
-    if (conversation_entry_ptr == NULL) {
-        // xmpli_names = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
-        conversation_entry_ptr = wmem_alloc(wmem_file_scope(), sizeof(blip_conversation_entry_t));
-    }
-    conversation_entry_ptr->num_frames_seen += 1;
-    conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
-
-
-    //
 
 
 
@@ -184,6 +176,55 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // TODO: if this flag is set:
     // TODO:    Compressed= 0x08  // 0000 1000
     // TODO: it should not try to decode the body into json (or are properties compressed too!?)
+
+
+    // ------------------------------------- Conversation Tracking -----------------------------------------------------
+
+
+    // Adapted from sample code in https://raw.githubusercontent.com/wireshark/wireshark/master/doc/README.dissector
+
+
+    conversation_t *conversation;
+    conversation = find_or_create_conversation(pinfo);
+    blip_conversation_entry_t *conversation_entry_ptr = (blip_conversation_entry_t*)conversation_get_proto_data(conversation, proto_blip);
+    if (conversation_entry_ptr == NULL) {
+
+        // create a new blip_conversation_entry_t
+        conversation_entry_ptr = wmem_alloc(wmem_file_scope(), sizeof(blip_conversation_entry_t));
+
+        // TODO: this code should ONLY run if it's a Request message, not a response message
+
+        // create a new hash map and save a reference in blip_conversation_entry_t
+        conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
+
+        // Add entry to hashmap to track the frame number for this request message
+        guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
+        *frame_num_copy = pinfo->num;
+
+        guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
+        *value_message_num_copy = value_message_num;
+
+        wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
+
+
+    } else {
+        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
+        if (first_frame_number_for_msg != NULL) {
+            printf("first_frame_number_for_msg: %d\n", *first_frame_number_for_msg);
+        }
+    }
+
+    
+
+    conversation_entry_ptr->num_frames_seen += 1;
+
+    // Update the conversation w/ the latest version of the blip_conversation_entry_t
+    conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
+
+
+    //
+
+
 
     // ------------------------ BLIP Frame Header: Properties Length VarInt --------------------------------------------------
 
