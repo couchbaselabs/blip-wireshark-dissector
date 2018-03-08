@@ -13,6 +13,7 @@
 
 #include <wsutil/str_util.h>
 #include <wsutil/unicode-utils.h>
+#include <epan/conversation.h>
 
 #include <wiretap/wtap.h>
 #include <printf.h>
@@ -63,6 +64,11 @@ static int hf_blip_ack_size = -1;
 
 static gint ett_blip = -1;
 
+/* define your structure here */
+typedef struct {
+    int num_frames_seen;
+} blip_conversation_entry_t;
+
 
 static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -77,7 +83,30 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
 
-    // ------------------------------------- BLIP tree -----------------------------------------------------------------
+
+
+    // ------------------------------------- Conversation Tracking -----------------------------------------------------
+
+
+    // Adapted from sample code in https://raw.githubusercontent.com/wireshark/wireshark/master/doc/README.dissector
+
+    conversation_t *conversation;
+    conversation = find_or_create_conversation(pinfo);
+    blip_conversation_entry_t *conversation_entry_ptr = (blip_conversation_entry_t*)conversation_get_proto_data(conversation, proto_blip);
+    if (conversation_entry_ptr == NULL) {
+        // xmpli_names = wmem_map_new(wmem_epan_scope(), g_str_hash, g_str_equal);
+        conversation_entry_ptr = wmem_alloc(wmem_file_scope(), sizeof(blip_conversation_entry_t));
+    }
+    conversation_entry_ptr->num_frames_seen += 1;
+    conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
+
+
+    //
+
+
+
+
+    // ------------------------------------- Setup BLIP tree -----------------------------------------------------------
 
 
     /* Add a subtree to dissection.  See WSDG 9.2.2. Dissecting the details of the protocol  */
