@@ -55,6 +55,7 @@ static int hf_blip_message_number = -1;
 static int hf_blip_frame_flags = -1;
 static int hf_blip_properties_length = -1;
 static int hf_blip_properties = -1;
+static int hf_blip_message_body = -1;
 
 static gint ett_blip = -1;
 
@@ -191,6 +192,17 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     printf("new offset: %d\n", offset);
 
 
+    // ------------------------ BLIP Frame: Message Body --------------------------------------------------
+
+    // WS_DLL_PUBLIC gint tvb_reported_length_remaining(const tvbuff_t *tvb, const gint offset);
+    gint reported_length_remaining = tvb_reported_length_remaining(tvb, offset);
+
+    // TODO: in certain conditions, should ignore the checksum at the end
+
+    proto_tree_add_item(blip_tree, hf_blip_message_body, tvb, offset, reported_length_remaining, ENC_UTF_8);
+
+    offset += reported_length_remaining;
+    printf("new offset: %d\n", offset);
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
 
@@ -227,6 +239,12 @@ proto_register_blip(void)
             },
             { &hf_blip_properties,
                     { "BLIP Properties", "blip.props",
+                            FT_STRING, STR_UNICODE,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+            { &hf_blip_message_body,
+                    { "BLIP Message Body", "blip.messagebody",
                             FT_STRING, STR_UNICODE,
                             NULL, 0x0,
                             NULL, HFILL }
