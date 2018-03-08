@@ -47,6 +47,7 @@
 /* --- end macros --- */
 
 gboolean is_compressed(guint64);
+gboolean is_ack_message(guint64);
 
 static dissector_handle_t blip_handle;
 
@@ -137,9 +138,11 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     }
 
     // If it's an ACK message, handle that separately, since there are no properties etc.
-//    if is_ack(value_frame_flags) {
-//        return handle_ack(tvb, pinfo, blip_tree, offset, value_frame_flags)
-//    }
+    if (is_ack_message(value_frame_flags) == TRUE) {
+        col_set_str(pinfo->cinfo, COL_INFO, "ACK -- cannot decode further");
+        return tvb_captured_length(tvb);
+        // return handle_ack_message(tvb, pinfo, blip_tree, offset, value_frame_flags);
+    }
 
 
     // TODO: if this flag is set:
@@ -234,7 +237,30 @@ is_compressed(guint64 value_frame_flags)
     // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
     // since frame flags all fit into one byte at the time this code was written.
 
-    if ((0x08ll & value_frame_flags) > 0) {
+    if ((0x08ll & value_frame_flags) == 0x08ll) {
+        return TRUE;
+    }
+
+    return FALSE;
+
+}
+
+gboolean
+is_ack_message(guint64 value_frame_flags)
+{
+    // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
+    // since frame flags all fit into one byte at the time this code was written.
+
+    // Mask out the least significant bits: 0000 0111
+    guint64 type_mask_val = (0x07ll & value_frame_flags);
+
+    // ACKMSG
+    if ((0x04ll & type_mask_val) == 0x04ll) {
+        return TRUE;
+    }
+
+    // ACKRPY
+    if ((0x05 & type_mask_val) == 0x05) {
         return TRUE;
     }
 
@@ -242,6 +268,14 @@ is_compressed(guint64 value_frame_flags)
 
 
 }
+
+
+
+/*
+ *     if (is_ack(value_frame_flags) == TRUE) {
+        return handle_ack(tvb, pinfo, blip_tree, offset, value_frame_flags);
+    }
+ */
 
 void
 proto_register_blip(void)
