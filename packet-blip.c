@@ -46,8 +46,9 @@
     PRINTF_BYTE_TO_BINARY_INT32((i) >> 32), PRINTF_BYTE_TO_BINARY_INT32(i)
 /* --- end macros --- */
 
-gboolean is_compressed(guint64);
-gboolean is_ack_message(guint64);
+static gboolean is_compressed(guint64);
+static gboolean is_ack_message(guint64);
+static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
 
 static dissector_handle_t blip_handle;
 
@@ -58,6 +59,7 @@ static int hf_blip_frame_flags = -1;
 static int hf_blip_properties_length = -1;
 static int hf_blip_properties = -1;
 static int hf_blip_message_body = -1;
+static int hf_blip_ack_size = -1;
 
 static gint ett_blip = -1;
 
@@ -139,9 +141,9 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // If it's an ACK message, handle that separately, since there are no properties etc.
     if (is_ack_message(value_frame_flags) == TRUE) {
-        col_set_str(pinfo->cinfo, COL_INFO, "ACK -- cannot decode further");
-        return tvb_captured_length(tvb);
-        // return handle_ack_message(tvb, pinfo, blip_tree, offset, value_frame_flags);
+        // col_set_str(pinfo->cinfo, COL_INFO, "ACK -- cannot decode further");
+        // return tvb_captured_length(tvb);
+        return handle_ack_message(tvb, pinfo, blip_tree, offset, value_frame_flags);
     }
 
 
@@ -231,7 +233,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     return tvb_captured_length(tvb);
 }
 
-gboolean
+static gboolean
 is_compressed(guint64 value_frame_flags)
 {
     // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
@@ -245,7 +247,7 @@ is_compressed(guint64 value_frame_flags)
 
 }
 
-gboolean
+static gboolean
 is_ack_message(guint64 value_frame_flags)
 {
     // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
@@ -266,16 +268,38 @@ is_ack_message(guint64 value_frame_flags)
 
     return FALSE;
 
+}
 
+static int
+handle_ack_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *blip_tree, gint offset, guint64 value_frame_flags)
+{
+
+    // Appease compiler about unused variables
+    if (pinfo || blip_tree || offset || value_frame_flags) {}
+
+    // This gets the number of ack bytes received  as a var int in order to find out how much to bump
+    // the offset for the next proto_tree item
+    guint64 value_ack_size;
+    guint varint_ack_size_length = tvb_get_varint(
+            tvb,
+            offset,
+            FT_VARINT_MAX_LEN,
+            &value_ack_size,
+            ENC_VARINT_PROTOBUF);
+
+    printf("BLIP ack size: %" G_GUINT64_FORMAT "\n", value_ack_size);
+
+    proto_tree_add_item(blip_tree, hf_blip_ack_size, tvb, offset, varint_ack_size_length, ENC_VARINT_PROTOBUF);
+
+    offset += varint_ack_size_length;
+    printf("new offset: %d\n", offset);
+
+    return tvb_captured_length(tvb);
 }
 
 
 
-/*
- *     if (is_ack(value_frame_flags) == TRUE) {
-        return handle_ack(tvb, pinfo, blip_tree, offset, value_frame_flags);
-    }
- */
+
 
 void
 proto_register_blip(void)
@@ -312,6 +336,15 @@ proto_register_blip(void)
                             NULL, 0x0,
                             NULL, HFILL }
             },
+            { &hf_blip_ack_size,
+                    { "BLIP ACK num bytes", "blip.numackbytes",
+                            FT_UINT64, BASE_DEC,
+                            NULL, 0x0,
+                            NULL, HFILL }
+            },
+
+
+
     };
 
     /* Setup protocol subtree array */
