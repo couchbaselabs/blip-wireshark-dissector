@@ -46,6 +46,7 @@
     PRINTF_BYTE_TO_BINARY_INT32((i) >> 32), PRINTF_BYTE_TO_BINARY_INT32(i)
 /* --- end macros --- */
 
+gboolean is_compressed(guint64);
 
 static dissector_handle_t blip_handle;
 
@@ -124,6 +125,21 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     printf("Frame flags "
                    PRINTF_BINARY_PATTERN_INT8 "\n",
            PRINTF_BYTE_TO_BINARY_INT8(value_frame_flags));
+
+
+    // If it's compressed, don't try to do any more decoding
+    // TODO: How can this indicate it's compressed in the UI?  Can it somehow call proto_tree_add_item() and tell
+    // TODO: tell it to read the varint, and then run a bitmask on it?  Or is there another more direct way to
+    // TODO: add an empty item and then explicitly set it.
+    if (is_compressed(value_frame_flags) == TRUE) {
+        col_set_str(pinfo->cinfo, COL_INFO, "Compressed -- cannot decode further");
+        return tvb_captured_length(tvb);
+    }
+
+    // If it's an ACK message, handle that separately, since there are no properties etc.
+//    if is_ack(value_frame_flags) {
+//        return handle_ack(tvb, pinfo, blip_tree, offset, value_frame_flags)
+//    }
 
 
     // TODO: if this flag is set:
@@ -206,12 +222,25 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
 
-    // Stop compiler from complaining about unused variables
-    if (pinfo || tree || data) {
-
-    }
+    // Stop compiler from complaining about unused function params
+    if (pinfo || data) {}
 
     return tvb_captured_length(tvb);
+}
+
+gboolean
+is_compressed(guint64 value_frame_flags)
+{
+    // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
+    // since frame flags all fit into one byte at the time this code was written.
+
+    if ((0x08ll & value_frame_flags) > 0) {
+        return TRUE;
+    }
+
+    return FALSE;
+
+
 }
 
 void
