@@ -164,10 +164,50 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // ENC_UTF_8
 
     const guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
-    printf("buf: %s", buf);
+    printf("buf: %s\n", buf);
+
+    // original
+    // proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset, (gint) value_properties_length, ENC_UTF_8);
+
+    //     char buf[] = "Profile\0subChanges\0continuous\0true\0foo\0\bar";
 
 
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset, (gint) value_properties_length, ENC_UTF_8);
+    int string_offset = offset;
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 7, ENC_UTF_8);
+    string_offset += 7;  // "Profile"
+    string_offset += 1;  // \0
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 10, ENC_UTF_8);
+    string_offset += 10;  // "subChanges"
+    string_offset += 1;  // \0
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 10, ENC_UTF_8);
+    string_offset += 10;  // "continuous"
+    string_offset += 1;  // \0
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 4, ENC_UTF_8);
+    string_offset += 4;  // "true"
+    string_offset += 1;  // \0
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 3, ENC_UTF_8);
+    string_offset += 3;  // "foo"
+    string_offset += 1;  // \0
+
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 3, ENC_UTF_8);
+    string_offset += 3;  // "bar"
+    string_offset += 1;  // \0
+
+
+//    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset+7, (gint) 10, ENC_UTF_8);
+//    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset+17, (gint) 10, ENC_UTF_8);
+
+//    int props_offset = offset;
+//    for (int i = 0; i < value_properties_length; i++) {
+//        if (buf[i] == '\0') {
+//
+//        }
+//    }
+
 
     offset += value_properties_length;
     printf("new offset: %d\n", offset);
