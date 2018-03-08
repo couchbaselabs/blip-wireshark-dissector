@@ -75,7 +75,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // ------------------------------------- BLIP tree -----------------------------------------------------------------
 
 
-    /* Add a subtree to dissection.  See 9.2.2. Dissecting the details of the protocol of WSDG */
+    /* Add a subtree to dissection.  See WSDG 9.2.2. Dissecting the details of the protocol  */
     proto_item *blip_item = proto_tree_add_item(tree, proto_blip, tvb, offset, -1, ENC_NA);
 
     blip_tree = proto_item_add_subtree(blip_item, ett_blip);
@@ -154,61 +154,39 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     offset += value_properties_length_varint_length;
     printf("new offset: %d\n", offset);
 
-
-
     // ------------------------ BLIP Frame: Properties --------------------------------------------------
 
     // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
     // In other words, as soon as there is a message that spans two frames, this code will break.
 
-    // ENC_UTF_8
+    // At this point, the length of the properties is known and is stored in value_properties_length.
+    // This reads the entire properties out of the tvb and into a buffer (buf).
+    guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
 
-    const guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
-    printf("buf: %s\n", buf);
+    // "Profile\0subChanges\0continuous\0true\0foo\0bar" -> "Profile:subChanges:continuous:true:foo:bar"
+    // Iterate over buf and change all the \0 null characters to ':', since otherwise trying to set a header
+    // field to this buffer via proto_tree_add_item() will end up only printing it up to the first null character,
+    // for example "Profile", even though there are many more properties that follow.
+    for (int i = 0; i < (int) value_properties_length; i++) {
+        if (i < (int) (value_properties_length - 1)) {
+            if (buf[i] == '\0') {  // TODO: I don't even know if this is actually a safe assumption in a UTF-8 encoded string
+                buf[i] = ':';
+            }
+        }
+    }
 
-    // original
-    // proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset, (gint) value_properties_length, ENC_UTF_8);
+    // Since proto_tree_add_item() requires a tvbuff, convert the guint8* buf into a tvbuff.  tvb_new_child_real_data()
+    // is used so that it will be free'd at the same time that the parent tvb is freed.
+    // See WSDG 9.3. How to handle transformed data.
+    tvbuff_t* tvb_child = tvb_new_child_real_data(tvb, buf, (guint) value_properties_length, (guint) value_properties_length);
 
-    //     char buf[] = "Profile\0subChanges\0continuous\0true\0foo\0\bar";
+    // Add this to the tree from the tvb_child tvbuff, and use offset=0 since it that buffer only
+    // contains the properties, which are now delimited by ':' in between each property.
+    // TODO: Since it's a child tvbuff, clicking this in the wireshark UI doesn't highlight the correct
+    // TODO: subset of the raw data.  That would be a nice-to-have
+    proto_tree_add_item(blip_tree, hf_blip_properties, tvb_child, 0, (guint) value_properties_length, ENC_UTF_8);
 
-
-    int string_offset = offset;
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 7, ENC_UTF_8);
-    string_offset += 7;  // "Profile"
-    string_offset += 1;  // \0
-
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 10, ENC_UTF_8);
-    string_offset += 10;  // "subChanges"
-    string_offset += 1;  // \0
-
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 10, ENC_UTF_8);
-    string_offset += 10;  // "continuous"
-    string_offset += 1;  // \0
-
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 4, ENC_UTF_8);
-    string_offset += 4;  // "true"
-    string_offset += 1;  // \0
-
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 3, ENC_UTF_8);
-    string_offset += 3;  // "foo"
-    string_offset += 1;  // \0
-
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, string_offset, (gint) 3, ENC_UTF_8);
-    string_offset += 3;  // "bar"
-    string_offset += 1;  // \0
-
-
-//    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset+7, (gint) 10, ENC_UTF_8);
-//    proto_tree_add_item(blip_tree, hf_blip_properties, tvb, offset+17, (gint) 10, ENC_UTF_8);
-
-//    int props_offset = offset;
-//    for (int i = 0; i < value_properties_length; i++) {
-//        if (buf[i] == '\0') {
-//
-//        }
-//    }
-
-
+    // Bump the offset by the length of the properties
     offset += value_properties_length;
     printf("new offset: %d\n", offset);
 
@@ -223,9 +201,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     return tvb_captured_length(tvb);
 }
-
-
-
 
 void
 proto_register_blip(void)
