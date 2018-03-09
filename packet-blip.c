@@ -197,6 +197,15 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         // create a new hash map and save a reference in blip_conversation_entry_t
         conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
 
+
+
+    }
+
+
+    guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
+    if (first_frame_number_for_msg != NULL) {
+        printf("found first_frame_number:%lu for_msg: %d\n", value_message_num, *first_frame_number_for_msg);
+    } else {
         // Add entry to hashmap to track the frame number for this request message
         guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
         *frame_num_copy = pinfo->num;
@@ -206,15 +215,11 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
         wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
 
+        // printf("added first_frame_number: %d for_msg: %d\n", frame_num_copy, value_message_num_copy);
 
-    } else {
-        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
-        if (first_frame_number_for_msg != NULL) {
-            printf("first_frame_number_for_msg: %d\n", *first_frame_number_for_msg);
-        }
+
     }
 
-    
 
     conversation_entry_ptr->num_frames_seen += 1;
 
