@@ -49,6 +49,8 @@
 
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
+static gboolean is_req_message(guint64);
+
 static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
 
 static dissector_handle_t blip_handle;
@@ -199,24 +201,30 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     gboolean first_frame_in_msg = TRUE;
 
-    guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
-    if (first_frame_number_for_msg != NULL) {
-        printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
-        if (*first_frame_number_for_msg != pinfo->num) {
-            printf("first_frame_in_msg = FALSE;");
-            first_frame_in_msg = FALSE;
+    if (is_req_message(value_frame_flags) == TRUE) {
+
+        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
+        if (first_frame_number_for_msg != NULL) {
+            printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
+            if (*first_frame_number_for_msg != pinfo->num) {
+                printf("first_frame_in_msg = FALSE;");
+                first_frame_in_msg = FALSE;
+            }
+        } else {
+            // Add entry to hashmap to track the frame number for this request message
+            guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
+            *frame_num_copy = pinfo->num;
+
+            guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
+            *value_message_num_copy = value_message_num;
+
+            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
+
         }
-    } else {
-        // Add entry to hashmap to track the frame number for this request message
-        guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
-        *frame_num_copy = pinfo->num;
-
-        guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
-        *value_message_num_copy = value_message_num;
-
-        wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
 
     }
+
+
 
     // Update the conversation w/ the latest version of the blip_conversation_entry_t
     conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
@@ -334,12 +342,31 @@ is_ack_message(guint64 value_frame_flags)
     guint64 type_mask_val = (0x07ll & value_frame_flags);
 
     // ACKMSG
-    if ((0x04ll & type_mask_val) == 0x04ll) {
+    if (type_mask_val == 0x04ll) {
         return TRUE;
     }
 
     // ACKRPY
-    if ((0x05 & type_mask_val) == 0x05) {
+    if (type_mask_val == 0x05ll) {
+        return TRUE;
+    }
+
+    return FALSE;
+
+}
+
+//
+static gboolean
+is_req_message(guint64 value_frame_flags)
+{
+    // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
+    // since frame flags all fit into one byte at the time this code was written.
+
+    // Mask out the least significant bits: 0000 0111
+    guint64 type_mask_val = (0x07ll & value_frame_flags);
+
+    // MSG
+    if (type_mask_val == 0x00ll) {
         return TRUE;
     }
 
