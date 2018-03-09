@@ -45,7 +45,8 @@
     PRINTF_BINARY_PATTERN_INT32             PRINTF_BINARY_PATTERN_INT32
 #define PRINTF_BYTE_TO_BINARY_INT64(i) \
     PRINTF_BYTE_TO_BINARY_INT32((i) >> 32), PRINTF_BYTE_TO_BINARY_INT32(i)
-/* --- end macros --- */
+
+#define BLIP_BODY_CHECKSUM_SIZE 4
 
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
@@ -156,7 +157,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     // TODO: tell it to read the varint, and then run a bitmask on it?  Or is there another more direct way to
     // TODO: add an empty item and then explicitly set it.
     if (is_compressed(value_frame_flags) == TRUE) {
-        col_set_str(pinfo->cinfo, COL_INFO, "Compressed -- cannot decode further");
+        col_set_str(pinfo->cinfo, COL_INFO, "Compressed: BLIP dissector cannot decode further");
         return tvb_captured_length(tvb);
     }
 
@@ -166,16 +167,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         // return tvb_captured_length(tvb);
         return handle_ack_message(tvb, pinfo, blip_tree, offset, value_frame_flags);
     }
-
-
-    // TODO: if this flag is set:
-    // TODO:    MoreComing= 0x40  // 0100 0000
-    // TODO: it should issue warnings that subsequent packets in this conversation will be broken, since it currently
-    // TODO: doesn't handle messages split among multiple frames
-
-    // TODO: if this flag is set:
-    // TODO:    Compressed= 0x08  // 0000 1000
-    // TODO: it should not try to decode the body into json (or are properties compressed too!?)
 
 
     // ------------------------------------- Conversation Tracking -----------------------------------------------------
@@ -191,8 +182,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
         // create a new blip_conversation_entry_t
         conversation_entry_ptr = wmem_alloc(wmem_file_scope(), sizeof(blip_conversation_entry_t));
-
-        // TODO: this code should ONLY run if it's a Request message, not a response message
 
         // create a new hash map and save a reference in blip_conversation_entry_t
         conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
@@ -223,7 +212,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         }
 
     }
-
 
 
     // Update the conversation w/ the latest version of the blip_conversation_entry_t
@@ -294,21 +282,23 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
 
 
-
-
-
-
     // ------------------------ BLIP Frame: Message Body --------------------------------------------------
 
     // WS_DLL_PUBLIC gint tvb_reported_length_remaining(const tvbuff_t *tvb, const gint offset);
     gint reported_length_remaining = tvb_reported_length_remaining(tvb, offset);
 
-    // TODO: in certain conditions, should ignore the checksum at the end
+    // Don't read in the trailing checksum at the end
+    if (reported_length_remaining > BLIP_BODY_CHECKSUM_SIZE) {
+        reported_length_remaining -= BLIP_BODY_CHECKSUM_SIZE;
+    }
 
     proto_tree_add_item(blip_tree, hf_blip_message_body, tvb, offset, reported_length_remaining, ENC_UTF_8);
 
     offset += reported_length_remaining;
     printf("new offset: %d\n", offset);
+
+    // TODO: add the checksum to a separate UI field
+
 
     // -------------------------------------------- Etc ----------------------------------------------------------------
 
