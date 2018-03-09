@@ -67,8 +67,6 @@ static gint ett_blip = -1;
 /* define your structure here */
 typedef struct {
 
-    int num_frames_seen;
-
     // For the _requests_ only, keep track of the largest frame number seen.  This is useful for determining whether
     // this is the first frame in a request message or not
 
@@ -197,14 +195,17 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         // create a new hash map and save a reference in blip_conversation_entry_t
         conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
 
-
-
     }
 
+    gboolean first_frame_in_msg = TRUE;
 
     guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
     if (first_frame_number_for_msg != NULL) {
-        printf("found first_frame_number:%lu for_msg: %d\n", value_message_num, *first_frame_number_for_msg);
+        printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
+        if (*first_frame_number_for_msg != pinfo->num) {
+            printf("first_frame_in_msg = FALSE;");
+            first_frame_in_msg = FALSE;
+        }
     } else {
         // Add entry to hashmap to track the frame number for this request message
         guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
@@ -215,77 +216,78 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
         wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
 
-        // printf("added first_frame_number: %d for_msg: %d\n", frame_num_copy, value_message_num_copy);
-
-
     }
-
-
-    conversation_entry_ptr->num_frames_seen += 1;
 
     // Update the conversation w/ the latest version of the blip_conversation_entry_t
     conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
 
 
-    //
+    // Is this the first frame in a message?
+    if (first_frame_in_msg == TRUE) {
 
+        // ------------------------ BLIP Frame Header: Properties Length VarInt --------------------------------------------------
 
+        // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
+        // In other words, as soon as there is a message that spans two frames, this code will break.
 
-    // ------------------------ BLIP Frame Header: Properties Length VarInt --------------------------------------------------
+        guint64 value_properties_length;
+        guint value_properties_length_varint_length = tvb_get_varint(
+                tvb,
+                offset,
+                FT_VARINT_MAX_LEN,
+                &value_properties_length,
+                ENC_VARINT_PROTOBUF);
 
-    // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
-    // In other words, as soon as there is a message that spans two frames, this code will break.
+        printf("BLIP properties length: %" G_GUINT64_FORMAT "\n", value_properties_length);
 
-    guint64 value_properties_length;
-    guint value_properties_length_varint_length = tvb_get_varint(
-            tvb,
-            offset,
-            FT_VARINT_MAX_LEN,
-            &value_properties_length,
-            ENC_VARINT_PROTOBUF);
+        proto_tree_add_item(blip_tree, hf_blip_properties_length, tvb, offset, value_properties_length_varint_length, ENC_VARINT_PROTOBUF);
 
-    printf("BLIP properties length: %" G_GUINT64_FORMAT "\n", value_properties_length);
+        offset += value_properties_length_varint_length;
+        printf("new offset: %d\n", offset);
 
-    proto_tree_add_item(blip_tree, hf_blip_properties_length, tvb, offset, value_properties_length_varint_length, ENC_VARINT_PROTOBUF);
+        // ------------------------ BLIP Frame: Properties --------------------------------------------------
 
-    offset += value_properties_length_varint_length;
-    printf("new offset: %d\n", offset);
+        // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
+        // In other words, as soon as there is a message that spans two frames, this code will break.
 
-    // ------------------------ BLIP Frame: Properties --------------------------------------------------
+        // At this point, the length of the properties is known and is stored in value_properties_length.
+        // This reads the entire properties out of the tvb and into a buffer (buf).
+        guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
 
-    // WARNING: this only works because this code assumes that ALL MESSAGES FIT INTO ONE FRAME, which is absolutely not true.
-    // In other words, as soon as there is a message that spans two frames, this code will break.
-
-    // At this point, the length of the properties is known and is stored in value_properties_length.
-    // This reads the entire properties out of the tvb and into a buffer (buf).
-    guint8* buf = tvb_get_string_enc(wmem_packet_scope(), tvb, offset, (gint) value_properties_length, ENC_UTF_8);
-
-    // "Profile\0subChanges\0continuous\0true\0foo\0bar" -> "Profile:subChanges:continuous:true:foo:bar"
-    // Iterate over buf and change all the \0 null characters to ':', since otherwise trying to set a header
-    // field to this buffer via proto_tree_add_item() will end up only printing it up to the first null character,
-    // for example "Profile", even though there are many more properties that follow.
-    for (int i = 0; i < (int) value_properties_length; i++) {
-        if (i < (int) (value_properties_length - 1)) {
-            if (buf[i] == '\0') {  // TODO: I don't even know if this is actually a safe assumption in a UTF-8 encoded string
-                buf[i] = ':';
+        // "Profile\0subChanges\0continuous\0true\0foo\0bar" -> "Profile:subChanges:continuous:true:foo:bar"
+        // Iterate over buf and change all the \0 null characters to ':', since otherwise trying to set a header
+        // field to this buffer via proto_tree_add_item() will end up only printing it up to the first null character,
+        // for example "Profile", even though there are many more properties that follow.
+        for (int i = 0; i < (int) value_properties_length; i++) {
+            if (i < (int) (value_properties_length - 1)) {
+                if (buf[i] == '\0') {  // TODO: I don't even know if this is actually a safe assumption in a UTF-8 encoded string
+                    buf[i] = ':';
+                }
             }
         }
+
+        // Since proto_tree_add_item() requires a tvbuff, convert the guint8* buf into a tvbuff.  tvb_new_child_real_data()
+        // is used so that it will be free'd at the same time that the parent tvb is freed.
+        // See WSDG 9.3. How to handle transformed data.
+        tvbuff_t* tvb_child = tvb_new_child_real_data(tvb, buf, (guint) value_properties_length, (guint) value_properties_length);
+
+        // Add this to the tree from the tvb_child tvbuff, and use offset=0 since it that buffer only
+        // contains the properties, which are now delimited by ':' in between each property.
+        // TODO: Since it's a child tvbuff, clicking this in the wireshark UI doesn't highlight the correct
+        // TODO: subset of the raw data.  That would be a nice-to-have
+        proto_tree_add_item(blip_tree, hf_blip_properties, tvb_child, 0, (guint) value_properties_length, ENC_UTF_8);
+
+        // Bump the offset by the length of the properties
+        offset += value_properties_length;
+        printf("new offset: %d\n", offset);
+
+
     }
 
-    // Since proto_tree_add_item() requires a tvbuff, convert the guint8* buf into a tvbuff.  tvb_new_child_real_data()
-    // is used so that it will be free'd at the same time that the parent tvb is freed.
-    // See WSDG 9.3. How to handle transformed data.
-    tvbuff_t* tvb_child = tvb_new_child_real_data(tvb, buf, (guint) value_properties_length, (guint) value_properties_length);
 
-    // Add this to the tree from the tvb_child tvbuff, and use offset=0 since it that buffer only
-    // contains the properties, which are now delimited by ':' in between each property.
-    // TODO: Since it's a child tvbuff, clicking this in the wireshark UI doesn't highlight the correct
-    // TODO: subset of the raw data.  That would be a nice-to-have
-    proto_tree_add_item(blip_tree, hf_blip_properties, tvb_child, 0, (guint) value_properties_length, ENC_UTF_8);
 
-    // Bump the offset by the length of the properties
-    offset += value_properties_length;
-    printf("new offset: %d\n", offset);
+
+
 
 
     // ------------------------ BLIP Frame: Message Body --------------------------------------------------
