@@ -24,3 +24,4 @@ Build + Run.
 
 1. Expand flags to be more readable (currently just shows decimal version)
 1. Handle compressed messages
+1. Submit this to the Wireshark Repo for being [included in Wireshark](https://www.wireshark.org/docs/wsdg_html_chunked/ChSrcContribute.html) by default
