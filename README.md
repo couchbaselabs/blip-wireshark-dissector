@@ -19,3 +19,8 @@ Copy `packet-blip.c` into the dissectors directory.
 Add to the cmakelists.txt file.
 
 Build + Run.
+
+## TODO
+
+1. Expand flags to be more readable (currently just shows decimal version)
+1. Handle compressed messages
