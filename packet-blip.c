@@ -272,7 +272,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     gint reported_length_remaining = tvb_reported_length_remaining(tvb, offset);
 
     // Don't read in the trailing checksum at the end
-    if (reported_length_remaining > BLIP_BODY_CHECKSUM_SIZE) {
+    if (reported_length_remaining >= BLIP_BODY_CHECKSUM_SIZE) {
         reported_length_remaining -= BLIP_BODY_CHECKSUM_SIZE;
     }
 
