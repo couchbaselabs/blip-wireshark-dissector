@@ -48,10 +48,27 @@
 
 #define BLIP_BODY_CHECKSUM_SIZE 4
 
+/* define your structure here */
+typedef struct {
+
+    // For the _requests_ only, keep track of the largest frame number seen.  This is useful for determining whether
+    // this is the first frame in a request message or not
+
+    // key: message number
+    // value: frame number for the _first_ frame in this request message
+    wmem_map_t *blip_requests;
+
+    // TODO: similar map for blip_responses, and maybe even errors.
+
+
+} blip_conversation_entry_t;
+
+
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
 static gboolean is_req_message(guint64);
 static GString* get_message_type(guint64);
+static gboolean is_first_frame_in_msg(blip_conversation_entry_t *blip_conversation_entry, packet_info *pinfo, guint64 value_frame_flags, guint64 value_message_num);
 
 static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
 
@@ -67,21 +84,6 @@ static int hf_blip_message_body = -1;
 static int hf_blip_ack_size = -1;
 
 static gint ett_blip = -1;
-
-/* define your structure here */
-typedef struct {
-
-    // For the _requests_ only, keep track of the largest frame number seen.  This is useful for determining whether
-    // this is the first frame in a request message or not
-
-    // key: message number
-    // value: frame number for the _first_ frame in this request message
-    wmem_map_t *blip_requests;
-
-    // TODO: similar map for blip_responses, and maybe even errors.
-
-
-} blip_conversation_entry_t;
 
 
 static int
@@ -192,38 +194,14 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     }
 
-
-    // TODO: this either needs to create a separate hash table for responses and errors, or
-    // TODO: better yet build that into the key ("msgnum-msgtype"), which will require switching to a string key.
-    // TODO: latter approach is better since it will mean less code dupe.
-    //
-    // TODO: To repro, open sgblip_cap25.pcap look at frame 1143, which is a response from sg
-
-    gboolean first_frame_in_msg = TRUE;
-
-    if (is_req_message(value_frame_flags) == TRUE) {
-
-        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
-        if (first_frame_number_for_msg != NULL) {
-            printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
-            if (*first_frame_number_for_msg != pinfo->num) {
-                printf("first_frame_in_msg = FALSE;");
-                first_frame_in_msg = FALSE;
-            }
-        } else {
-            // Add entry to hashmap to track the frame number for this request message
-            guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
-            *frame_num_copy = pinfo->num;
-
-            guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
-            *value_message_num_copy = value_message_num;
-
-            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
-
-        }
-
-    }
-
+    // Is this the first frame in a blip message with multiple frames?
+    // Warning: this only works for blip requests (type=MSG) right now.
+    gboolean first_frame_in_msg = is_first_frame_in_msg(
+            conversation_entry_ptr,
+            pinfo,
+            value_frame_flags,
+            value_message_num
+    );
 
     // Update the conversation w/ the latest version of the blip_conversation_entry_t
     conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
@@ -445,7 +423,43 @@ handle_ack_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *blip_tree, gin
     return tvb_captured_length(tvb);
 }
 
+// Finds out whether this is the first blip frame in the blip message (which can consist of a series of frames).
+// If it is, updates the conversation_entry_ptr->blip_requests hash to record the pinfo->num (wireshark packet number)
+static gboolean
+is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_info *pinfo, guint64 value_frame_flags, guint64 value_message_num) {
 
+    gboolean first_frame_in_msg = TRUE;
+
+    // Only blip requests (type=MSG) are currently considered.  This is a bug though, since
+    // blip responses (type=RPY) could also have multiple blip frames in a blip message, and should be taken into account.
+    if (is_req_message(value_frame_flags) == TRUE) {
+
+        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
+        if (first_frame_number_for_msg != NULL) {
+            printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
+            if (*first_frame_number_for_msg != pinfo->num) {
+                printf("first_frame_in_msg = FALSE;");
+                first_frame_in_msg = FALSE;
+            }
+        } else {
+
+            // Add entry to hashmap to track the frame number for this request message
+            guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
+            *frame_num_copy = pinfo->num;
+
+            guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
+            *value_message_num_copy = value_message_num;
+
+            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
+
+        }
+
+    }
+
+    return first_frame_in_msg;
+
+
+}
 
 
 
