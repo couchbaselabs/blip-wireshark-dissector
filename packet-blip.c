@@ -66,7 +66,6 @@ typedef struct {
 
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
-static gboolean is_req_message(guint64);
 static GString* get_message_type(guint64);
 static gboolean is_first_frame_in_msg(blip_conversation_entry_t *blip_conversation_entry, packet_info *pinfo, guint64 value_frame_flags, guint64 value_message_num);
 
@@ -98,8 +97,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
-
-
 
 
     // ------------------------------------- Setup BLIP tree -----------------------------------------------------------
@@ -377,25 +374,6 @@ is_ack_message(guint64 value_frame_flags)
 
 }
 
-//
-static gboolean
-is_req_message(guint64 value_frame_flags)
-{
-    // Note, even though this is a 64-bit int, only the least significant byte has meaningful information,
-    // since frame flags all fit into one byte at the time this code was written.
-
-    // Mask out the least significant bits: 0000 0111
-    guint64 type_mask_val = (0x07ll & value_frame_flags);
-
-    // MSG
-    if (type_mask_val == 0x00ll) {
-        return TRUE;
-    }
-
-    return FALSE;
-
-}
-
 static int
 handle_ack_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *blip_tree, gint offset, guint64 value_frame_flags)
 {
@@ -430,38 +408,40 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
 
     gboolean first_frame_in_msg = TRUE;
 
-
     // Derive the hash key to use
-    // srcport:messagenum
+    // msgtype:srcport:messagenum
 
+    GString *msg_type = get_message_type(value_frame_flags);
     gchar *srcport = g_strdup_printf("%u", pinfo->srcport);
     gchar *msgnum = g_strdup_printf("%lu", value_message_num);
     gchar *colon = g_strdup(":");
 
-    // TODO: this is a terrible memory leak .. keeps creating new keys, never frees them
-    gchar *hash_key = wmem_strconcat(wmem_file_scope(), srcport, colon, msgnum, NULL);
+    // TODO: this is a terrible memory leak .. it keeps creating new keys, never frees them
+    gchar *hash_key = wmem_strconcat(
+            wmem_file_scope(),
+            msg_type->str,
+            colon,
+            srcport,
+            colon,
+            msgnum,
+            NULL
+    );
 
-    // Only blip requests (type=MSG) are currently considered.  This is a bug though, since
-    // blip responses (type=RPY) could also have multiple blip frames in a blip message, and should be taken into account.
-    if (is_req_message(value_frame_flags) == TRUE) {
+    guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &hash_key);
 
-        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &hash_key);
-
-        if (first_frame_number_for_msg != NULL) {
-            printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
-            if (*first_frame_number_for_msg != pinfo->num) {
-                printf("first_frame_in_msg = FALSE;");
-                first_frame_in_msg = FALSE;
-            }
-        } else {
-
-            // Add entry to hashmap to track the frame number for this request message
-            guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
-            *frame_num_copy = pinfo->num;
-
-            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key, (void *) frame_num_copy);
-
+    if (first_frame_number_for_msg != NULL) {
+        printf("found first_frame_number:%d for_msg: %lu with hash key: %s\n", *first_frame_number_for_msg, value_message_num, hash_key);
+        if (*first_frame_number_for_msg != pinfo->num) {
+            printf("first_frame_in_msg = FALSE;");
+            first_frame_in_msg = FALSE;
         }
+    } else {
+
+        // Add entry to hashmap to track the frame number for this request message
+        guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
+        *frame_num_copy = pinfo->num;
+
+        wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key, (void *) frame_num_copy);
 
     }
 
