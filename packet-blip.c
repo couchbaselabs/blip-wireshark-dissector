@@ -51,6 +51,7 @@
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
 static gboolean is_req_message(guint64);
+static GString* get_message_type(guint64);
 
 static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
 
@@ -153,13 +154,16 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
 
     // If it's compressed, don't try to do any more decoding
-    // TODO: How can this indicate it's compressed in the UI?  Can it somehow call proto_tree_add_item() and tell
-    // TODO: tell it to read the varint, and then run a bitmask on it?  Or is there another more direct way to
-    // TODO: add an empty item and then explicitly set it.
     if (is_compressed(value_frame_flags) == TRUE) {
         col_set_str(pinfo->cinfo, COL_INFO, "Compressed: BLIP dissector cannot decode further");
         return tvb_captured_length(tvb);
     }
+
+
+    GString *msg_type = get_message_type(value_frame_flags);
+    col_add_str(pinfo->cinfo, COL_INFO, msg_type->str);
+    g_string_free(msg_type, TRUE);
+
 
     // If it's an ACK message, handle that separately, since there are no properties etc.
     if (is_ack_message(value_frame_flags) == TRUE) {
@@ -187,6 +191,13 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
 
     }
+
+
+    // TODO: this either needs to create a separate hash table for responses and errors, or
+    // TODO: better yet build that into the key ("msgnum-msgtype"), which will require switching to a string key.
+    // TODO: latter approach is better since it will mean less code dupe.
+    //
+    // TODO: To repro, open sgblip_cap25.pcap look at frame 1143, which is a response from sg
 
     gboolean first_frame_in_msg = TRUE;
 
@@ -321,6 +332,49 @@ is_compressed(guint64 value_frame_flags)
     return FALSE;
 
 }
+
+// MSG =    0x00
+// RPY =    0x01
+// ERR =    0x02
+// ACKMSG = 0x04
+// ACKRPY = 0x05
+static GString*
+get_message_type(guint64 value_frame_flags)
+{
+
+    // Mask out the least significant bits: 0000 0111
+    guint64 type_mask_val = (0x07ll & value_frame_flags);
+
+    // MSG
+    if (type_mask_val == 0x00ll) {
+        return g_string_new("MSG");
+    }
+
+    // RPY
+    if (type_mask_val == 0x01ll) {
+        return g_string_new("RPY");
+    }
+
+    // ERR
+    if (type_mask_val == 0x02ll) {
+        return g_string_new("ERR");
+    }
+
+    // ACKMSG
+    if (type_mask_val == 0x04ll) {
+        return g_string_new("ACKMSG");
+    }
+
+    // ACKRPY
+    if (type_mask_val == 0x05ll) {
+        return g_string_new("ACKRPY");
+    }
+
+
+    return g_string_new("???");
+
+}
+
 
 static gboolean
 is_ack_message(guint64 value_frame_flags)
