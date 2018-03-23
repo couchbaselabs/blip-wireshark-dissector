@@ -406,6 +406,12 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
 
     gboolean first_frame_in_msg = TRUE;
 
+    // Temporary pool for the lookup hash_key.  Will get duplicated on the file_scope() pool if needed to be
+    // stored in the hashtable.
+    wmem_allocator_t *pool;
+    pool = wmem_allocator_new(WMEM_ALLOCATOR_SIMPLE);
+
+
     // Derive the hash key to use
     // msgtype:srcport:messagenum
 
@@ -416,7 +422,7 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
 
     // TODO: this is a terrible memory leak .. it keeps creating new keys, never frees them
     gchar *hash_key = wmem_strconcat(
-            wmem_file_scope(),
+            pool,
             msg_type->str,
             colon,
             srcport,
@@ -435,17 +441,23 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
         }
     } else {
 
+        // If storing the key in the hashmap, re-allocate it with the file_scope() allocator
+        gchar *hash_key_copy = wmem_strdup(wmem_file_scope(), hash_key);
+
         // Add entry to hashmap to track the frame number for this request message
         guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
         *frame_num_copy = pinfo->num;
 
-        wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key, (void *) frame_num_copy);
+        wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key_copy, (void *) frame_num_copy);
 
     }
 
     g_free(srcport);
     g_free(msgnum);
     g_free(colon);
+
+    wmem_destroy_allocator(pool);  // destroy the temp memory pool
+
 
     return first_frame_in_msg;
 
