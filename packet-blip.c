@@ -190,7 +190,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         conversation_entry_ptr = wmem_alloc(wmem_file_scope(), sizeof(blip_conversation_entry_t));
 
         // create a new hash map and save a reference in blip_conversation_entry_t
-        conversation_entry_ptr->blip_requests = wmem_map_new(wmem_epan_scope(), g_int64_hash, g_int64_equal);
+        conversation_entry_ptr->blip_requests = wmem_map_new(wmem_file_scope(), g_str_hash, g_str_equal);
 
     }
 
@@ -430,11 +430,23 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
 
     gboolean first_frame_in_msg = TRUE;
 
+
+    // Derive the hash key to use
+    // srcport:messagenum
+
+    gchar *srcport = g_strdup_printf("%u", pinfo->srcport);
+    gchar *msgnum = g_strdup_printf("%lu", value_message_num);
+    gchar *colon = g_strdup(":");
+
+    // TODO: this is a terrible memory leak .. keeps creating new keys, never frees them
+    gchar *hash_key = wmem_strconcat(wmem_file_scope(), srcport, colon, msgnum, NULL);
+
     // Only blip requests (type=MSG) are currently considered.  This is a bug though, since
     // blip responses (type=RPY) could also have multiple blip frames in a blip message, and should be taken into account.
     if (is_req_message(value_frame_flags) == TRUE) {
 
-        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &value_message_num);
+        guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) &hash_key);
+
         if (first_frame_number_for_msg != NULL) {
             printf("found first_frame_number:%d for_msg: %lu\n", *first_frame_number_for_msg, value_message_num);
             if (*first_frame_number_for_msg != pinfo->num) {
@@ -447,14 +459,15 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
             guint32* frame_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint32));
             *frame_num_copy = pinfo->num;
 
-            guint64* value_message_num_copy = wmem_alloc(wmem_file_scope(), sizeof(guint64));
-            *value_message_num_copy = value_message_num;
-
-            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) value_message_num_copy, (void *) frame_num_copy);
+            wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key, (void *) frame_num_copy);
 
         }
 
     }
+
+    g_free(srcport);
+    g_free(msgnum);
+    g_free(colon);
 
     return first_frame_in_msg;
 
