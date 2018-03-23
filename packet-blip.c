@@ -48,40 +48,42 @@
 
 #define BLIP_BODY_CHECKSUM_SIZE 4
 
-/* define your structure here */
+// blip_conversation_entry_t is metadata that the blip dissector associates w/ each wireshark conversation
 typedef struct {
 
-    // For the _requests_ only, keep track of the largest frame number seen.  This is useful for determining whether
-    // this is the first frame in a request message or not
+    // Keep track of the largest frame number seen.  This is useful for determining whether
+    // this is the first frame in a request message or not.
 
-    // key: message number
-    // value: frame number for the _first_ frame in this request message
+    // key: msgtype:srcport:messagenumber -> value: frame number for the _first_ frame in this request message
+    // Example: "MSG:23243:56" -> 12
+    // which means: "the first frame for blip message number 56, originating from source port 23243, and for message type = MSG
+    //               ... occurred in wireshark packet #12"
     wmem_map_t *blip_requests;
-
-    // TODO: similar map for blip_responses, and maybe even errors.
-
 
 } blip_conversation_entry_t;
 
 
+// Forward declarations
 static gboolean is_compressed(guint64);
 static gboolean is_ack_message(guint64);
 static GString* get_message_type(guint64);
-static gboolean is_first_frame_in_msg(blip_conversation_entry_t *blip_conversation_entry, packet_info *pinfo, guint64 value_frame_flags, guint64 value_message_num);
-
+static gboolean is_first_frame_in_msg(
+        blip_conversation_entry_t *blip_conversation_entry,
+        packet_info *pinfo,
+        guint64 value_frame_flags,
+        guint64 value_message_num
+);
 static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
-
 static dissector_handle_t blip_handle;
 
+// File level variables
 static int proto_blip = -1;
-
 static int hf_blip_message_number = -1;
 static int hf_blip_frame_flags = -1;
 static int hf_blip_properties_length = -1;
 static int hf_blip_properties = -1;
 static int hf_blip_message_body = -1;
 static int hf_blip_ack_size = -1;
-
 static gint ett_blip = -1;
 
 
@@ -174,10 +176,8 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // ------------------------------------- Conversation Tracking -----------------------------------------------------
 
-
+    // Create a new conversation if needed and associate the blip_conversation_entry_t with it
     // Adapted from sample code in https://raw.githubusercontent.com/wireshark/wireshark/master/doc/README.dissector
-
-
     conversation_t *conversation;
     conversation = find_or_create_conversation(pinfo);
     blip_conversation_entry_t *conversation_entry_ptr = (blip_conversation_entry_t*)conversation_get_proto_data(conversation, proto_blip);
@@ -192,7 +192,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     }
 
     // Is this the first frame in a blip message with multiple frames?
-    // Warning: this only works for blip requests (type=MSG) right now.
     gboolean first_frame_in_msg = is_first_frame_in_msg(
             conversation_entry_ptr,
             pinfo,
@@ -202,7 +201,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     // Update the conversation w/ the latest version of the blip_conversation_entry_t
     conversation_add_proto_data(conversation, proto_blip, (void *)conversation_entry_ptr);
-
 
     // Is this the first frame in a message?
     if (first_frame_in_msg == TRUE) {
