@@ -16,7 +16,7 @@
 #include <epan/conversation.h>
 
 #include <wiretap/wtap.h>
-#include <printf.h>
+#include <stdio.h>
 
 #include "packet-http.h"
 
@@ -258,7 +258,7 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
         proto_tree_add_item(blip_tree, hf_blip_properties, tvb_child, 0, (guint) value_properties_length, ENC_UTF_8);
 
         // Bump the offset by the length of the properties
-        offset += value_properties_length;
+        offset += (gint)gvalue_properties_length;
         printf("new offset: %d\n", offset);
 
 
@@ -434,7 +434,7 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
     guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) hash_key);
 
     if (first_frame_number_for_msg != NULL) {
-        printf("found first_frame_number:%d for_msg: %lu with hash key: %s\n", *first_frame_number_for_msg, value_message_num, hash_key);
+        printf("found first_frame_number:%d for_msg: %llu with hash key: %s\n", *first_frame_number_for_msg, (unsigned long long)value_message_num, hash_key);
         if (*first_frame_number_for_msg != pinfo->num) {
             printf("first_frame_in_msg = FALSE;");
             first_frame_in_msg = FALSE;
