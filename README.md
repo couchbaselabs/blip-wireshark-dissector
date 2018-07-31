@@ -20,6 +20,10 @@ Add to the cmakelists.txt file.
 
 Build + Run.
 
+## Usage Instructions
+
+If you aren't able to capture traffic directly using the custom-built Wireshark, then capture via `tcpdump` and open the capture file using Wireshark.
+
 ## TODO
 
 1. Expand flags to be more readable (currently just shows decimal version)
