@@ -75,8 +75,8 @@ static gboolean is_first_frame_in_msg(
         guint64 value_message_num
 );
 static int handle_ack_message(tvbuff_t*, packet_info*, proto_tree*, gint, guint64);
-static tvbuff_t* decompress(packet_info*, tvbuff_t*, z_stream*, gint, gint);
-static z_stream* get_decompress_stream(guint64);
+static tvbuff_t* decompress(packet_info*, tvbuff_t*, gint, gint);
+static z_stream* get_decompress_stream(packet_info*);
 static dissector_handle_t blip_handle;
 
 // File level variables
@@ -89,9 +89,8 @@ static int hf_blip_message_body = -1;
 static int hf_blip_ack_size = -1;
 static int hf_blip_checksum = -1;
 static gint ett_blip = -1;
-static z_stream decompress_stream_up;
-static z_stream decompress_stream_down;
 static Bytef decompress_buffer[16384];
+static wmem_map_t* decompress_streams = NULL;
 
 static int
 dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
@@ -102,7 +101,6 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
 
     /* Set the protcol column to say BLIP */
     col_set_str(pinfo->cinfo, COL_PROTOCOL, "BLIP");
-
     /* Clear out stuff in the info column */
     col_clear(pinfo->cinfo,COL_INFO);
     
@@ -201,11 +199,14 @@ dissect_blip(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, void *data)
     tvbuff_t* tvb_to_use = tvb;
     gboolean compressed = is_compressed(value_frame_flags);
     if(compressed) {
-        // TODO:  Need to cache these, since this is very much not replayable and will result in
-        // unpredictable things happening.  The frames *must* be processed in order for this to give
-        // the correct result, but scrolling wireshark, etc, results in this being called multiple times
-        // for the same frames in probably randomish order
-        tvb_to_use = decompress(pinfo, tvb, get_decompress_stream(value_frame_flags), offset, tvb_reported_length_remaining(tvb, offset) - BLIP_BODY_CHECKSUM_SIZE);
+        if(!tree) {
+            // This is just a preliminary pass, no protocol tree to fill in so
+            // don't waste time decompressing (it will probably mess things up
+            // anyway)
+            return tvb_reported_length(tvb);
+        }
+        
+        tvb_to_use = decompress(pinfo, tvb, offset, tvb_reported_length_remaining(tvb, offset) - BLIP_BODY_CHECKSUM_SIZE);
         if(!tvb_to_use) {
             proto_tree_add_string(blip_tree, hf_blip_message_body, tvb, offset, tvb_reported_length_remaining(tvb, offset), "<Error decompressing message>");
             return tvb_reported_length(tvb);
@@ -403,6 +404,65 @@ handle_ack_message(tvbuff_t *tvb, packet_info *pinfo, proto_tree *blip_tree, gin
     return tvb_captured_length(tvb);
 }
 
+static gchar*
+message_hash_key_decompress(wmem_allocator_t* pool,
+                            packet_info *pinfo)
+{
+    // Derive the hash key to use
+    // srcport:destport
+    
+    gchar *srcport = g_strdup_printf("%u", pinfo->srcport);
+    gchar *dstport = g_strdup_printf("%u", pinfo->destport);
+    gchar *colon = g_strdup(":");
+    gchar *hash_key = wmem_strconcat(
+                                     pool,
+                                     srcport,
+                                     colon,
+                                     dstport,
+                                     NULL
+                                     );
+    
+    g_free(srcport);
+    g_free(dstport);
+    g_free(colon);
+    
+    return hash_key;
+}
+
+static gchar*
+message_hash_key_convo(wmem_allocator_t* pool,
+                 packet_info *pinfo,
+                 guint64 value_frame_flags,
+                 guint64 value_message_num)
+{
+    // Derive the hash key to use
+    // msgtype:srcport:destport:messagenum
+    
+    GString *msg_type = get_message_type(value_frame_flags);
+    gchar *srcport = g_strdup_printf("%u", pinfo->srcport);
+    gchar *dstport = g_strdup_printf("%u", pinfo->destport);
+    gchar *msgnum = g_strdup_printf("%lu", value_message_num);
+    gchar *colon = g_strdup(":");
+    gchar *hash_key = wmem_strconcat(
+                                     pool,
+                                     msg_type->str,
+                                     colon,
+                                     srcport,
+                                     colon,
+                                     dstport,
+                                     colon,
+                                     msgnum,
+                                     NULL
+                                     );
+    
+    g_free(srcport);
+    g_free(dstport);
+    g_free(msgnum);
+    g_free(colon);
+    
+    return hash_key;
+}
+
 // Finds out whether this is the first blip frame in the blip message (which can consist of a series of frames).
 // If it is, updates the conversation_entry_ptr->blip_requests hash to record the pinfo->num (wireshark packet number)
 static gboolean
@@ -415,26 +475,8 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
     wmem_allocator_t *pool;
     pool = wmem_allocator_new(WMEM_ALLOCATOR_SIMPLE);
 
-
-    // Derive the hash key to use
-    // msgtype:srcport:messagenum
-
-    GString *msg_type = get_message_type(value_frame_flags);
-    gchar *srcport = g_strdup_printf("%u", pinfo->srcport);
-    gchar *msgnum = g_strdup_printf("%lu", value_message_num);
-    gchar *colon = g_strdup(":");
-
     // TODO: this is a terrible memory leak .. it keeps creating new keys, never frees them
-    gchar *hash_key = wmem_strconcat(
-            pool,
-            msg_type->str,
-            colon,
-            srcport,
-            colon,
-            msgnum,
-            NULL
-    );
-
+    gchar *hash_key = message_hash_key_convo(pool, pinfo, value_frame_flags, value_message_num);
     guint* first_frame_number_for_msg = wmem_map_lookup(conversation_entry_ptr->blip_requests, (void *) hash_key);
 
     if (first_frame_number_for_msg != NULL) {
@@ -453,12 +495,7 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
         *frame_num_copy = pinfo->num;
 
         wmem_map_insert(conversation_entry_ptr->blip_requests, (void *) hash_key_copy, (void *) frame_num_copy);
-
     }
-
-    g_free(srcport);
-    g_free(msgnum);
-    g_free(colon);
 
     wmem_destroy_allocator(pool);  // destroy the temp memory pool
 
@@ -466,22 +503,33 @@ is_first_frame_in_msg(blip_conversation_entry_t *conversation_entry_ptr, packet_
     return first_frame_in_msg;
 }
 
-static z_stream* get_decompress_stream(guint64 value_frame_flags)
+static z_stream* get_decompress_stream(packet_info* pinfo)
 {
-    // Mask out the least significant bits: 0000 0111
-    guint64 type_mask_val = (0x07ll & value_frame_flags);
-    
-    // MSG
-    if (type_mask_val == 0x00ll) {
-        return &decompress_stream_up;
+    if(!decompress_streams) {
+        decompress_streams = wmem_map_new(wmem_file_scope(), g_str_hash, g_str_equal);
     }
     
-    return &decompress_stream_down;
+    wmem_allocator_t *pool;
+    pool = wmem_allocator_new(WMEM_ALLOCATOR_SIMPLE);
+    
+    gchar* hash_key = message_hash_key_decompress(pool, pinfo);
+    z_stream* decompress_stream = wmem_map_lookup(decompress_streams, (void *) hash_key);
+    if(decompress_stream) {
+        wmem_destroy_allocator(pool);
+        return decompress_stream;
+    }
+    
+    gchar *hash_key_copy = wmem_strdup(wmem_file_scope(), hash_key);
+    decompress_stream = wmem_alloc0(wmem_file_scope(), sizeof(z_stream));
+    wmem_map_insert(decompress_streams, hash_key_copy, decompress_stream);
+    wmem_destroy_allocator(pool);
+    return decompress_stream;
 }
 
 static tvbuff_t*
-decompress(packet_info* pinfo, tvbuff_t* tvb, z_stream* decompress_stream, gint offset, gint length)
+decompress(packet_info* pinfo, tvbuff_t* tvb, gint offset, gint length)
 {
+    z_stream* decompress_stream = get_decompress_stream(pinfo);
     static Byte trailer[4] = { 0x00, 0x00, 0xff, 0xff };
     if(!decompress_stream->next_out) {
         decompress_stream->zalloc = 0;
