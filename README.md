@@ -3,20 +3,18 @@ A wireshark dissector for the [BLIP](https://github.com/couchbaselabs/BLIP-Cpp) 
 
 ![screenshot](https://user-images.githubusercontent.com/296876/37130256-8122e29a-2237-11e8-8c22-caaf65889f22.png)
 
-Work-in-progress.
-
 ## Installation Instructions
 
 Build wireshark from source.
 
-Differences from [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) 
+Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) with the **Building without a third-party package source** instructions, with the following changes:
 
 1. `brew install libgcrypt`
 1. Add explicit path to python executable: `cmake -DPYTHON_EXECUTABLE:FILEPATH=/usr/bin/python ../ && make`
 
 Copy `packet-blip.c` into the dissectors directory.
 
-Add to the cmakelists.txt file.
+Add `packet-blip.c` to the cmakelists.txt file.
 
 Build + Run.
 
