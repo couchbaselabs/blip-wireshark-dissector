@@ -12,8 +12,7 @@ Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling
 1. `brew install libgcrypt`
 2. Copy packet-blip.c to epan/dissectors
 3. Add `${CMAKE_CURRENT_SOURCE_DIR}/packet-blip.c` to `CMakeLists.txt ` under the `DISSECTOR_SRC` section
-4. At wireshark root folder, `mkdir build` and `cd build`
-5. Run `cmake -DPYTHON_EXECUTABLE:FILEPATH=/usr/bin/python ../ && make`
+4. From the wireshark root folder, `mkdir build && cd build && cmake ../ && make`
 
 ## Usage Instructions
 
