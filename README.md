@@ -7,7 +7,7 @@ A wireshark dissector for the [BLIP](https://github.com/couchbaselabs/BLIP-Cpp) 
 
 Build wireshark from source.
 
-Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) with the **Building without a third-party package source** instructions to download the wireshark source code and tools used for building the wireshare. Then follows the below instructions.
+Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) with the **Building with Homebrew** instructions to download the wireshark source code and tools used for building the wireshare. Then follows the below instructions.
 
 1. `brew install libgcrypt`
 2. Copy packet-blip.c to epan/dissectors
