@@ -5,7 +5,7 @@ A wireshark dissector for the [BLIP](https://github.com/couchbaselabs/BLIP-Cpp) 
 
 ## Binary Installation Instructions
 
-A Developer Preview can be downloaded from the [Wireshark Developer Preview Downloads](https://www.wireshark.org/download/automated) page.
+At the time of writing (Dec 2018) an official version of Wireshark that includes the dissesctor is not available.  It will be included in version 3.0.  A Developer Preview can be downloaded from the [Wireshark Developer Preview Downloads](https://www.wireshark.org/download/automated) page.  The version must be at least 2.9.0.
 
 ## Source Installation Instructions
 
