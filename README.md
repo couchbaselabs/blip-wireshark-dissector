@@ -3,7 +3,11 @@ A wireshark dissector for the [BLIP](https://github.com/couchbaselabs/BLIP-Cpp) 
 
 ![screenshot](https://user-images.githubusercontent.com/296876/37130256-8122e29a-2237-11e8-8c22-caaf65889f22.png)
 
-## Installation Instructions
+## Binary Installation Instructions
+
+A Developer Preview can be downloaded from the [Wireshark Developer Preview Downloads](https://www.wireshark.org/download/automated) page.
+
+## Source Installation Instructions
 
 Build wireshark from source.
 
@@ -16,8 +20,6 @@ Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling
 
 ## Usage Instructions
 
-If you aren't able to capture traffic directly using the custom-built Wireshark, then capture via `tcpdump` and open the capture file using Wireshark.
+* You must capture traffic from both the Couchbase Lite client and the Sync Gateway server, otherwise it will not recognized the Websocket upgrade handshake and packets will not be properly dissected as `BLIP` packets.
+* You must start the capture before the Websocket upgrade handshake for the connection(s) you are interested in, or else any packets part of the connection will not be dissected as `BLIP` packets.
 
-## TODO
-
-1. Submit this to the Wireshark Repo for being [included in Wireshark](https://www.wireshark.org/docs/wsdg_html_chunked/ChSrcContribute.html) by default
