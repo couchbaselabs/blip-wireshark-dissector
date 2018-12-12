@@ -9,14 +9,9 @@ A Developer Preview can be downloaded from the [Wireshark Developer Preview Down
 
 ## Source Installation Instructions
 
-Build wireshark from source.
+The source code of the BLIP dissector is included in the Wireshark source tree.
 
-Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) with the **Building with Homebrew** instructions to download the wireshark source code and tools used for building the wireshare. Then follows the below instructions.
-
-1. `brew install libgcrypt`
-2. Copy packet-blip.c to epan/dissectors
-3. Add `${CMAKE_CURRENT_SOURCE_DIR}/packet-blip.c` to `CMakeLists.txt ` under the `DISSECTOR_SRC` section
-4. From the wireshark root folder, `mkdir build && cd build && cmake ../ && make`
+Use the [official instructions](https://wiki.wireshark.org/BuildingAndInstalling#macOS) to download and build Wireshark from source. 
 
 ## Usage Instructions
 
